@@ -28,9 +28,10 @@ const (
 	modeTable mode = iota
 	modeDetails
 	modeConfirmDelete
-	modeForm   // a huh form: new VM, wizard, token
-	modeOp     // watching an operation's output
-	modeReview // the wizard's plan, before applying
+	modeForm      // a huh form: new VM, wizard, token
+	modeOp        // watching an operation's output
+	modeReviewNew // review resource choices before creating
+	modeReview    // the wizard's plan, before applying
 	modeQuitAsk
 )
 
@@ -82,8 +83,9 @@ type model struct {
 	deepBusy bool
 	cursor   int
 
-	cfg   config.Config
-	flash string
+	capacity capacityState
+	cfg      config.Config
+	flash    string
 
 	op     *op
 	events chan tea.Msg
@@ -173,6 +175,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.sizeForm()
 	case overviewMsg:
 		if msg.deep {
 			m.deepBusy, m.lastDeep = false, time.Now()
@@ -188,6 +191,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !msg.deep && !m.deepBusy && time.Since(m.lastDeep) > deepEvery {
 			return m, m.fetch(true)
 		}
+	case capacityMsg:
+		m.capacity = capacityState(msg)
 	case setupMsg:
 		if msg.needed && m.mode == modeTable && !m.busy() {
 			m.flash = "Let's set things up first."
@@ -309,6 +314,20 @@ func (m *model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.mode = modeTable
+		}
+		return m, nil
+	case modeReviewNew:
+		if s == "esc" {
+			return m, m.newForm(false)
+		}
+		if s == "y" {
+			for kind, value := range map[string]string{"cpu": m.newVM.cpu, "memory": m.newVM.memory, "disk": m.newVM.disk} {
+				if err := m.validateResource(kind, value); err != nil {
+					m.flash = err.Error()
+					return m, m.newForm(false)
+				}
+			}
+			return m, m.createVM()
 		}
 		return m, nil
 	case modeReview:

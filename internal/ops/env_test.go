@@ -21,16 +21,17 @@ type world struct {
 	mu sync.Mutex
 
 	// exe.dev
-	vms       []exedev.VMInfo
-	integ     exedev.IntegrationState
-	createErr error
-	deleteErr error
-	created   []string // tag of each Create
-	deleted   []string
-	forgot    []string
-	stages    []string // markers Stage returns in turn; the last one repeats
-	scriptOut string   // what removeDeviceScript prints
-	scriptErr error
+	vms        []exedev.VMInfo
+	integ      exedev.IntegrationState
+	createErr  error
+	deleteErr  error
+	createArgs []string
+	created    []string // tag of each Create
+	deleted    []string
+	forgot     []string
+	stages     []string // markers Stage returns in turn; the last one repeats
+	scriptOut  string   // what removeDeviceScript prints
+	scriptErr  error
 
 	// tailnet
 	peers     map[string]tailnet.Peer
@@ -69,9 +70,10 @@ func (w *world) ListVMs(context.Context) ([]exedev.VMInfo, error) {
 func (w *world) TailscaleIntegration(context.Context) (exedev.IntegrationState, error) {
 	return w.integ, nil
 }
-func (w *world) Create(_ context.Context, name, tag, _ string, _ []string) (exedev.Created, error) {
+func (w *world) Create(_ context.Context, name, tag, _ string, args []string) (exedev.Created, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.createArgs = slices.Clone(args)
 	if w.createErr != nil {
 		return exedev.Created{}, w.createErr
 	}

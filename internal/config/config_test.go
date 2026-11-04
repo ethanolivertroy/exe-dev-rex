@@ -98,3 +98,20 @@ func TestSaveOmitsZero(t *testing.T) {
 		t.Fatalf("an unset cpu must not be written:\n%s", b)
 	}
 }
+
+func TestInvalidSizesPreserveSettings(t *testing.T) {
+	c := Config{New: NewDefaults{Memory: "4GB", Disk: "25GB"}}
+	for _, key := range []string{"new.memory", "new.disk"} {
+		for _, bad := range []string{"0", "0GB", "-4GB", "lots", "1.5GB"} {
+			if err := Set(&c, key, bad); err == nil {
+				t.Fatalf("accepted %s=%s", key, bad)
+			}
+			if c.New.Memory != "4GB" || c.New.Disk != "25GB" {
+				t.Fatal("invalid input changed config")
+			}
+		}
+	}
+	if err := Set(&c, "new.memory", " 512 mb "); err != nil || c.New.Memory != "512MB" {
+		t.Fatalf("%+v %v", c, err)
+	}
+}

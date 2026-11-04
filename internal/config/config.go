@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/ethanolivertroy/exe-dev-rex/internal/resources"
 )
 
 type Config struct {
@@ -154,9 +155,15 @@ func Set(c *Config, key, value string) error {
 			c.New.CPU, err = 0, fmt.Errorf("new.cpu: want a whole number of CPUs")
 		}
 	case "new.memory":
-		c.New.Memory = value
+		if err := resources.ValidateSize(value); err != nil {
+			return fmt.Errorf("new.memory: %w", err)
+		}
+		c.New.Memory = resources.SizeArgument(value)
 	case "new.disk":
-		c.New.Disk = value
+		if err := resources.ValidateSize(value); err != nil {
+			return fmt.Errorf("new.disk: %w", err)
+		}
+		c.New.Disk = resources.SizeArgument(value)
 	default:
 		return fmt.Errorf("unknown setting %q (settings: %s)", key, strings.Join(Keys, ", "))
 	}

@@ -73,14 +73,26 @@ func CreateVM(ctx context.Context, u *ui.UI, name string, extra []string) (NewRe
 
 // CreateVM is CreateVM in e.
 func (e *Env) CreateVM(ctx context.Context, u *ui.UI, name string, extra []string) (res NewResult, err error) {
+	return e.createVM(ctx, u, name, extra, true)
+}
+
+// CreateVMExact creates a VM using only the supplied size flags. The TUI has
+// already resolved saved defaults; blank fields must remain service defaults.
+func CreateVMExact(ctx context.Context, u *ui.UI, name string, extra []string) (NewResult, error) {
+	return Default().createVM(ctx, u, name, extra, false)
+}
+
+func (e *Env) createVM(ctx context.Context, u *ui.UI, name string, extra []string, defaults bool) (res NewResult, err error) {
 	started := time.Now()
 	if !vmName.MatchString(name) {
 		return res, invalid("VM names are lowercase letters, digits and dashes")
 	}
-	if cfg, err := config.Load(); err == nil {
-		extra = append(cfg.New.Args(extra), extra...)
-	} else {
-		u.Warn("ignoring the config file: %v", err)
+	if defaults {
+		if cfg, err := config.Load(); err == nil {
+			extra = append(cfg.New.Args(extra), extra...)
+		} else {
+			u.Warn("ignoring the config file: %v", err)
+		}
 	}
 
 	tr := trace.Open("exe-new", name)

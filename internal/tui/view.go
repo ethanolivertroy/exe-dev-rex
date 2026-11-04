@@ -25,7 +25,12 @@ func (m *model) render() string {
 	var b strings.Builder
 	b.WriteString(m.header() + "\n\n")
 	switch m.mode {
+	case modeReviewNew:
+		b.WriteString(m.newReviewView())
 	case modeForm:
+		if m.formKind == "new" || m.formKind == "wizard" {
+			b.WriteString(lipgloss.NewStyle().Width(max(20, min(88, m.width-4))).Render(m.capacityDescription()) + "\n\n")
+		}
 		if m.form != nil {
 			b.WriteString(m.form.View())
 		}

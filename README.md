@@ -39,6 +39,22 @@ Run `exe-rex doctor` any time to check the setup. To update, download the new re
 
 `new` and `rm` quit and reopen the Rex app to update its sidebar. Your sessions survive.
 
+### VM size in the TUI
+
+Press `n` to create a VM. CPU, memory and disk each have their own page with
+accepted formats, examples and validation. CPU takes a positive whole number;
+memory and disk accept whole sizes such as `4`, `4GB`, `8G` or `512MB` (bare
+numbers mean GB). Blank fields use exe.dev defaults. Saved defaults from `c`
+(Settings) prefill the form; clearing one really uses the service default.
+
+The form refreshes your plan with `ssh exe.dev billing plan --json`, shows
+shared account capacity, and checks reported CPU, memory and disk limits.
+Included disk is shown separately from the disk ceiling: extra disk may incur
+charges. Account totals are not remaining capacity; exe.dev checks actual
+availability at creation. If plan lookup fails, the form says so and leaves
+capacity validation to exe.dev. A final review shows the requested size before
+`y` creates the VM and restarts Rex.
+
 ## Ephemeral or persistent nodes
 
 By default, VMs join as **ephemeral** Tailscale nodes. The trust credential then only needs to create auth keys, and a VM's device disappears when you `rm` it, or within an hour if it's deleted some other way. The trade-off: a VM that's off the tailnet for 30–60 minutes or more rejoins by itself when it comes back, and that restarts Rex there, **stopping programs running in its sessions**.

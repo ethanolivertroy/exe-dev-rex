@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"errors"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/ethanolivertroy/exe-dev-rex/internal/config"
 	"github.com/ethanolivertroy/exe-dev-rex/internal/exedev"
 	"github.com/ethanolivertroy/exe-dev-rex/internal/ops"
+	"github.com/ethanolivertroy/exe-dev-rex/internal/resources"
 	"github.com/ethanolivertroy/exe-dev-rex/internal/ui"
 )
 
@@ -28,27 +28,9 @@ type wizard struct {
 	cpu, memory, disk string
 }
 
-var sizeRe = regexp.MustCompile(`^\d+\s*([GgMm][Bb]?)?$`)
-
-func validSize(s string) error {
-	if s = strings.TrimSpace(s); s == "" || sizeRe.MatchString(s) {
-		return nil
-	}
-	return errors.New("like 8GB, or leave empty for exe.dev's default")
-}
-
-func validCPU(s string) error {
-	if s = strings.TrimSpace(s); s == "" {
-		return nil
-	}
-	if n, err := strconv.Atoi(s); err != nil || n < 1 {
-		return errors.New("a whole number, or leave empty")
-	}
-	return nil
-}
-
 func (m *model) setForm(kind string, f *huh.Form) tea.Cmd {
 	m.form, m.formKind, m.mode = f.WithShowHelp(true), kind, modeForm
+	m.sizeForm()
 	return m.form.Init()
 }
 
@@ -58,17 +40,25 @@ func (m *model) openNew() tea.Cmd {
 	if c.CPU > 0 {
 		m.newVM.cpu = strconv.Itoa(c.CPU)
 	}
-	return m.setForm("new", huh.NewForm(huh.NewGroup(
-		huh.NewInput().Title("Name for the new VM").Value(&m.newVM.name).Validate(func(s string) error {
+	return m.newForm(true)
+}
+
+func (m *model) newForm(refresh bool) tea.Cmd {
+	groups := []*huh.Group{huh.NewGroup(
+		huh.NewInput().Title("Name for the new VM").Value(&m.newVM.name).
+			Description("Lowercase letters, digits and dashes; start with a letter or digit.").Validate(func(s string) error {
 			if !ops.ValidVMName(strings.TrimSpace(s)) {
-				return errors.New("lowercase letters, digits and dashes")
+				return errors.New("use lowercase letters, digits and dashes")
 			}
 			return nil
 		}),
-		huh.NewInput().Title("CPUs").Placeholder("exe.dev default (2)").Value(&m.newVM.cpu).Validate(validCPU),
-		huh.NewInput().Title("Memory").Placeholder("exe.dev default").Value(&m.newVM.memory).Validate(validSize),
-		huh.NewInput().Title("Disk").Placeholder("exe.dev default").Value(&m.newVM.disk).Validate(validSize),
-	).Title("New exe.dev VM").Description("Size defaults come from Settings. Rex restarts once when it's added to the sidebar.")))
+	).Title("New exe.dev VM · Name")}
+	groups = append(groups, m.resourceGroups(&m.newVM.cpu, &m.newVM.memory, &m.newVM.disk, "New exe.dev VM")...)
+	init := m.setForm("new", huh.NewForm(groups...))
+	if refresh {
+		return tea.Batch(init, m.fetchCapacity())
+	}
+	return init
 }
 
 const devicesCoreWarning = `exe-rex rm can then delete persistent devices itself. Be aware: any process
@@ -90,7 +80,7 @@ func (m *model) openWizard() tea.Cmd {
 	}
 	m.wiz = w
 	wz := &m.wiz
-	return m.setForm("wizard", huh.NewForm(
+	groups := []*huh.Group{
 		huh.NewGroup(
 			huh.NewSelect[string]().Title("How should VMs join your tailnet?").
 				Options(huh.NewOption("Ephemeral (recommended)", "ephemeral"), huh.NewOption("Persistent", "persistent")).
@@ -122,12 +112,9 @@ func (m *model) openWizard() tea.Cmd {
 			huh.NewConfirm().Title("Link exe-new, exe-rm and rex-app-host to exe-rex?").
 				Description("Shorter names for the same commands.").Value(&wz.links),
 		).Title("Settings 3/4 · Shortcuts"),
-		huh.NewGroup(
-			huh.NewInput().Title("CPUs").Placeholder("exe.dev default (2)").Value(&wz.cpu).Validate(validCPU),
-			huh.NewInput().Title("Memory").Placeholder("exe.dev default").Value(&wz.memory).Validate(validSize),
-			huh.NewInput().Title("Disk").Placeholder("exe.dev default").Value(&wz.disk).Validate(validSize),
-		).Title("Settings 4/4 · Default size for new VMs"),
-	))
+	}
+	groups = append(groups, m.resourceGroups(&wz.cpu, &wz.memory, &wz.disk, "Settings 4/4 · Defaults for future VMs")...)
+	return tea.Batch(m.setForm("wizard", huh.NewForm(groups...)), m.fetchCapacity())
 }
 
 func (m *model) askToken() tea.Cmd {
@@ -161,7 +148,7 @@ func (m *model) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.form = nil
 		switch kind {
 		case "new":
-			return m, m.createVM()
+			return m, m.reviewNew()
 		case "wizard", "token":
 			return m, m.plan()
 		}
@@ -177,13 +164,13 @@ func (m *model) createVM() tea.Cmd {
 		extra = append(extra, "--cpu="+v)
 	}
 	if v := strings.TrimSpace(a.memory); v != "" {
-		extra = append(extra, "--memory="+v)
+		extra = append(extra, "--memory="+resources.SizeArgument(v))
 	}
 	if v := strings.TrimSpace(a.disk); v != "" {
-		extra = append(extra, "--disk="+v)
+		extra = append(extra, "--disk="+resources.SizeArgument(v))
 	}
 	return m.begin("new", name, "Creating "+name, func(ctx context.Context, u *ui.UI) (bool, error) {
-		_, err := ops.CreateVM(ctx, u, name, extra)
+		_, err := ops.CreateVMExact(ctx, u, name, extra)
 		return false, err
 	})
 }
@@ -222,4 +209,16 @@ func (m *model) apply() tea.Cmd {
 		}
 		return ops.RunInstall(ctx, u, o)
 	})
+}
+
+func (m *model) sizeForm() {
+	if m.form == nil {
+		return
+	}
+	if m.width > 0 {
+		m.form.WithWidth(max(20, min(88, m.width-4)))
+	}
+	if m.height > 0 {
+		m.form.WithHeight(max(8, m.height-14))
+	}
 }
